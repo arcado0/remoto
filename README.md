@@ -32,9 +32,13 @@ completo (finestre di amministratore, UAC, schermata di blocco, Ctrl+Alt+Canc).
 
 ## Avvio rapido
 
-1. Installa `dist/Remoto-Setup-1.1.0.exe` (l'installer aggiunge la regola del Windows Firewall),
-   oppure estrai `dist/Remoto-1.1.0-portable-win64.zip` e avvia `Remoto\Remoto.exe`: niente
-   installazione, niente Node, i dati restano nella cartella `Remoto-dati` accanto all'eseguibile.
+1. Scarica dalla pagina [Releases](https://github.com/arcado0/remoto/releases/latest) l'installer
+   `Remoto-Setup-1.1.0.exe` (aggiunge la regola del Windows Firewall), oppure lo zip
+   `Remoto-1.1.0-portable-win64.zip`: estrailo e avvia `Remoto\Remoto.exe`, niente installazione,
+   niente Node, i dati restano nella cartella `Remoto-dati` accanto all'eseguibile. Chi parte dai
+   sorgenti li ottiene in `dist/` con `npm run dist` (vedi [Sviluppo](#sviluppo)).
+   Gli eseguibili non hanno una firma digitale: se Windows mostra *"Windows ha protetto il PC"*,
+   scegli *Ulteriori informazioni › Esegui comunque*.
    Se al primo avvio Windows chiede di consentire Remoto nel firewall, in rete locale funziona
    comunque (anche rispondendo *Annulla*): vedi [Rete locale e firewall](#rete-locale-e-firewall).
 2. Nella finestra principale trovi l'**ID di questa postazione** (riquadro in alto a sinistra).
