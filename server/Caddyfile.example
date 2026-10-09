@@ -1,0 +1,6 @@
+# TLS automatico (Let's Encrypt) davanti al server ID: i client usano wss://remoto.example.com
+# Avvia il server ID con REMOTO_TRUST_PROXY=1 (o --trust-proxy) per registrare gli IP reali.
+remoto.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:47800
+}

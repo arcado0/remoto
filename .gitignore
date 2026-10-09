@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.tools/
+.env
+*.log
+test-results/
+out/
+build/service/
+service/RemotoService/bin/
+service/RemotoService/obj/

@@ -1,0 +1,60 @@
+# Server ID di Remoto + TURN (coturn) per le reti in cui la connessione diretta non riesce.
+#
+#   (dalla cartella server/)
+#   1. copia .env.example in .env e imposta PUBLIC_HOST e TURN_SECRET
+#   2. docker compose up -d --build
+#   3. nei client: Impostazioni › Rete › Indirizzo del server = PUBLIC_HOST:47800
+#      (oppure wss://PUBLIC_HOST con il reverse proxy TLS di server/Caddyfile.example)
+#
+# Porte da aprire sul firewall del server: 47800/tcp, 3478/tcp+udp, 49160-49200/udp.
+
+services:
+  remoto-server:
+    build:
+      # il contesto è la radice del progetto: l'immagine copia src/shared e src/server
+      context: ..
+      dockerfile: server/Dockerfile
+    image: remoto-server:1.0.0
+    restart: unless-stopped
+    ports:
+      - "47800:47800"
+    environment:
+      REMOTO_NAME: "Server ID Remoto"
+      REMOTO_STUN_URLS: "stun:${PUBLIC_HOST}:3478,stun:stun.l.google.com:19302"
+      REMOTO_TURN_URLS: "turn:${PUBLIC_HOST}:3478?transport=udp,turn:${PUBLIC_HOST}:3478?transport=tcp"
+      REMOTO_TURN_SECRET: "${TURN_SECRET}"
+      REMOTO_TURN_TTL: "86400"
+      REMOTO_TRUST_PROXY: "${TRUST_PROXY:-0}"
+    volumes:
+      - remoto-data:/data
+
+  coturn:
+    image: coturn/coturn:4.17.2
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --min-port=49160
+      - --max-port=49200
+      - --fingerprint
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SECRET}
+      - --realm=${PUBLIC_HOST}
+      - --no-cli
+      - --no-tls
+      - --no-dtls
+      - --no-multicast-peers
+      - --stale-nonce=600
+      # il relay non deve poter raggiungere reti interne del server
+      - --denied-peer-ip=0.0.0.0-0.255.255.255
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      - --denied-peer-ip=100.64.0.0-100.127.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+
+volumes:
+  remoto-data:

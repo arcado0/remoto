@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+    <title>Richiesta di connessione - Remoto</title>
+    <link rel="stylesheet" href="../css/base.css" />
+    <style>
+      body { background: var(--surface); border: 1px solid var(--border-strong); }
+      .prompt { height: 100%; display: flex; flex-direction: column; }
+      .prompt-body { flex: 1; padding: 4px 20px 4px; display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; }
+      .who { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border); }
+      .who .n { font-size: 17px; font-weight: 650; }
+      .who .i { font-family: var(--mono); color: var(--text-2); font-size: 13px; }
+      .ask { font-size: 14.5px; color: var(--text-2); }
+      .ask strong { color: var(--text); }
+      .perms { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      .perm { display: flex; align-items: center; gap: 9px; padding: 8px 10px; text-align: left; border-radius: 10px; border: 1px solid var(--border); cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-2); background: var(--surface); transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast); }
+      .perm.on { color: var(--accent-ink); background: var(--accent-soft); border-color: transparent; }
+      .perm.disabled { opacity: 0.45; cursor: not-allowed; }
+      .perm .icon { width: 16px; height: 16px; }
+      .prompt-foot { display: flex; gap: 10px; padding: 14px 20px 18px; flex: none; background: var(--surface); border-top: 1px solid var(--border); position: relative; z-index: 1; }
+      .prompt-foot .btn { flex: 1; height: 42px; }
+      .timer { margin-left: auto; font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+      .warning { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--warning); background: var(--warning-soft); padding: 8px 10px; border-radius: 10px; }
+    </style>
+    <script type="module" src="./prompt.js"></script>
+  </head>
+  <body>
+    <div id="app" class="prompt"></div>
+  </body>
+</html>

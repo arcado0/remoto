@@ -1,0 +1,4 @@
+# fine riga LF nel repository e nella copia di lavoro (Dockerfile e script girano anche su Linux)
+* text=auto eol=lf
+*.ico binary
+*.png binary

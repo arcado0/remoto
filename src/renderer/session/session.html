@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:" />
+    <title>Remoto</title>
+    <link rel="stylesheet" href="../css/base.css" />
+    <link rel="stylesheet" href="./session.css" />
+    <script type="module" src="./session.js"></script>
+  </head>
+  <body>
+    <div id="app" class="session">
+      <div class="toolbar-hotzone" id="hotzone"></div>
+      <header class="toolbar" id="toolbar"></header>
+      <div class="workspace">
+        <main class="stage" id="stage">
+          <div class="screen-scroll" id="screen-scroll">
+            <div class="screen-wrap" id="screen-wrap">
+              <video id="screen" autoplay playsinline></video>
+              <canvas id="wb-canvas" class="wb-canvas"></canvas>
+            </div>
+          </div>
+          <div class="drop-hint hidden" id="drop-hint"></div>
+          <div class="wb-palette hidden" id="wb-palette"></div>
+          <div class="stats hidden" id="stats"></div>
+          <div class="status-layer" id="status"></div>
+        </main>
+        <aside class="side hidden" id="side"></aside>
+      </div>
+    </div>
+  </body>
+</html>

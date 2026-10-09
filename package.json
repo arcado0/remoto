@@ -1,0 +1,76 @@
+{
+  "name": "remoto",
+  "productName": "Remoto",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Remoto - desktop remoto stile AnyDesk: ID a 9 cifre, solo con conferma, file, chat, lavagna, privacy, microfono, controllo completo",
+  "type": "module",
+  "main": "src/main/main.js",
+  "author": "Remoto",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "electron .",
+    "start:b": "electron . --profile=b",
+    "server": "node src/server/cli.js",
+    "test": "node --test \"test/unit/**/*.test.js\"",
+    "test:e2e": "node --test --test-concurrency=1 \"test/e2e/**/*.test.js\"",
+    "icons": "electron scripts/make-icons.js",
+    "build:service": "dotnet publish service/RemotoService -c Release -o build/service",
+    "dist": "npm run build:service && electron-builder --win nsis && node scripts/collect-dist.mjs",
+    "dist:dir": "electron-builder --win dir",
+    "dist:zip": "electron-builder --win dir && node scripts/collect-dist.mjs",
+    "server:exe": "electron . --server"
+  },
+  "dependencies": {
+    "koffi": "^3.3.2",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "playwright": "^1.64.0"
+  },
+  "build": {
+    "appId": "it.remoto.app",
+    "productName": "Remoto",
+    "copyright": "Copyright © 2026 Remoto",
+    "directories": {
+      "output": "out",
+      "buildResources": "build"
+    },
+    "files": [
+      "package.json",
+      "src/**/*",
+      "!src/**/*.map"
+    ],
+    "asarUnpack": [
+      "node_modules/@koromix/**/*.node"
+    ],
+    "extraResources": [
+      {
+        "from": "build/service/RemotoService.exe",
+        "to": "service/RemotoService.exe"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "${productName}-${version}-${arch}-${target}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Remoto",
+      "include": "build/installer.nsh",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    }
+  }
+}

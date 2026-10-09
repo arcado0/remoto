@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Remoto - servizio di controllo completo (opzionale).
+    Un solo eseguibile con più modalità:
+      (nessun argomento)   avviato dal Gestore servizi: tiene vivo l'helper nella sessione dell'utente
+      helper <sessione>    helper di sessione (SYSTEM): input, desktop protetto, cattura della schermata di blocco/UAC
+      install | uninstall  installazione e rimozione (richiede amministratore)
+    Pubblicazione: dotnet publish -c Release  (eseguibile autonomo, nessun runtime .NET richiesto)
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>RemotoService</AssemblyName>
+    <RootNamespace>Remoto.Service</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <Version>1.0.0</Version>
+    <Company>Remoto</Company>
+    <Product>Remoto</Product>
+    <Description>Remoto - servizio di controllo completo</Description>
+    <Copyright>Copyright © 2026 Remoto</Copyright>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>it</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+</Project>
