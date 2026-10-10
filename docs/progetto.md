@@ -261,3 +261,44 @@ TCP è già fallito), UDP verso la porta del rilevamento (`src/main/net/connect.
   (UDP `connect` senza traffico), poi le schede fisiche, in fondo quelle virtuali.
 - Build: electron-builder scrive in `out/`; `scripts/collect-dist.mjs` mette in `dist/` solo lo zip
   portable e l'installer.
+
+## 13. Versione 1.2 (10/10/2026): appunti con file, audio esclusivo, latenza in LAN
+
+### Appunti (bug di Electron 44 e file)
+
+- **Bug**: da Electron 44 l'API `clipboard` del main è asincrona e in stile web (`readText`/`writeText`
+  restituiscono promesse, immagini con `read`/`write` e `ClipboardItem`); `availableFormats`,
+  `readImage` e `writeImage` non esistono più. La lettura falliva sempre in silenzio e nulla veniva
+  sincronizzato (i test e2e simulavano proprio quel passaggio). `ClipboardBridge` è stato riscritto.
+- **File**: `native/clipboard-files.js` legge e scrive CF_HDROP (+ "Preferred DropEffect" = copia)
+  via koffi; la copia in memoria globale usa `RtlMoveMemory` (un `koffi.view` su memoria esterna fa
+  chiudere Electron per la gabbia di memoria di V8). Protocollo sul canale "file"
+  (`renderer/lib/clipfiles.js`): `clipf` {token,count,total,names} → `clipf-get` {token,x} (dopo
+  `expectDownload` in una cartella di `features/clip-temp.js`) → trasferimento "download" →
+  `clipf-ready`. Permessi *Appunti* + *File*; oltre 1 GB `clipf-skip`. I file ricevuti vanno negli
+  appunti con `ClipboardBridge.applyFiles` (niente eco). Collaudo reale:
+  `test/e2e/dev/clipboard-files-check.mjs`.
+
+### Audio come Desktop remoto di Windows
+
+- `native/audio-devices.js`: Core Audio via COM/koffi (elenco, mute, dispositivo predefinito con
+  IPolicyConfig). Verificato che con le casse silenziate (IAudioEndpointVolume) la cattura loopback
+  di Chromium continua: il tono a 440 Hz arriva a chi controlla (`dev/audio-mute-check.mjs`).
+- `features/audio-redirect.js`: casse predefinite silenziate mentre l'engine invia l'audio
+  (`engine:audio-out`); con un cavo virtuale il suo lato microfono diventa predefinito
+  (console/multimedia/comunicazioni) e gli altri microfoni vengono silenziati. Stato originale in
+  `audio-ripristino.json` (ripristino anche dopo un arresto). Impostazione `audio.exclusive`.
+- `features/virtual-cable.js`: VB-CABLE con un clic: nome del pacchetto dalla pagina ufficiale, download
+  solo da download.vb-audio.com, firma Authenticode "VB-Audio" verificata, `-i -h` con UAC.
+  Riconosciuti anche Voicemeeter e "Steam Streaming Microphone".
+
+### Latenza in LAN
+
+- Tutti i preset con `contentHint: 'motion'` (con 'detail' *Qualità* arrivava a p90 ~500 ms).
+- `withVideoBitrates` (sdp.js): `x-google-start-bitrate=10000;x-google-min-bitrate=1500` nella
+  risposta applicata dall'host quando la sessione è in LAN: diretta, oppure via server con
+  l'indirizzo di chi si collega nella stessa sottorete (`addrs` nella richiesta, `sharesSubnet`).
+  Senza, anche in loopback la stima restava a pochi Mbit/s ("limitato da banda", risoluzione
+  ridotta, p90 129 ms); con, nessuna limitazione e p90 ~60 ms. Una rinegoziazione a sessione
+  avviata applica solo il minimo (la banda di partenza vale all'inizio della chiamata).
+- Statistiche dell'encoder remoto ogni 2 s (`enc`) nel pannello statistiche del viewer.

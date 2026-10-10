@@ -25,9 +25,10 @@ export class ViewerManager extends EventEmitter {
    * @param {Function|null} o.connectUdp  segnalazione UDP in LAN (lan-udp.js)
    * @param {number} o.udpPort  porta UDP da usare per un indirizzo scritto a mano
    */
-  constructor({ getIdentity, link, discovery = null, connectDirect, connectUdp = null, udpPort = 0, getExtraIce = () => [], now = Date.now, timeouts = TIMEOUTS }) {
+  constructor({ getIdentity, link, discovery = null, connectDirect, connectUdp = null, udpPort = 0, getExtraIce = () => [], getAddresses = () => [], now = Date.now, timeouts = TIMEOUTS }) {
     super();
     this.getIdentity = getIdentity;
+    this.getAddresses = getAddresses;
     this.link = link;
     this.discovery = discovery;
     this.connectDirect = connectDirect;
@@ -108,7 +109,8 @@ export class ViewerManager extends EventEmitter {
     transport.on('close', (why) => {
       if (BEFORE_RTC.has(s.state)) this.#end(s, 'failed', 'connection-lost', { notify: false, detail: why });
     });
-    if (!transport.send({ k: 'req', v: PROTOCOL_VERSION, name: me.name, mode: s.mode, prefs: s.prefs })) {
+    // gli indirizzi di rete locale dicono all'host se siamo nella sua stessa LAN (banda da LAN da subito)
+    if (!transport.send({ k: 'req', v: PROTOCOL_VERSION, name: me.name, mode: s.mode, prefs: s.prefs, addrs: this.getAddresses().slice(0, 8) })) {
       throw Object.assign(new Error('send failed'), { code: 'unreachable' });
     }
     s.timers.request = setTimeout(() => {

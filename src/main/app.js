@@ -1,6 +1,6 @@
 // Controller dell'applicazione: identità, rete (server ID, LAN, server integrato), finestre,
 // servizi condivisi. La logica lato host e lato viewer sta in host-side.js e viewer-side.js.
-import { app, screen, clipboard, nativeImage, shell, session, Notification } from 'electron';
+import { app, screen, clipboard, ClipboardItem, shell, session, Notification, net } from 'electron';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -19,6 +19,9 @@ import { FileService } from './features/files.js';
 import { ClipboardBridge } from './features/clipboard.js';
 import { isAdmin } from './features/system.js';
 import { ServiceManager } from './features/service-manager.js';
+import { VirtualCableInstaller } from './features/virtual-cable.js';
+import { ClipTemp } from './features/clip-temp.js';
+import { clipboardFiles } from './native/clipboard-files.js';
 import { win32 } from './native/win32.js';
 import { HostSide } from './host-side.js';
 import { ViewerSide } from './viewer-side.js';
@@ -83,7 +86,14 @@ export class RemotoApp {
         music: app.getPath('music'),
       },
     });
-    this.clipboard = new ClipboardBridge({ clipboard, nativeImage, sequence: () => win32()?.getClipboardSequenceNumber() ?? null });
+    // la finestra nascosta dell'engine fa da proprietaria degli appunti quando vi si mettono i file ricevuti
+    const ownerHwnd = () => {
+      const w = this.hostSide?.engineWin;
+      return w && !w.isDestroyed() ? w.getNativeWindowHandle().readBigUInt64LE(0) : 0n;
+    };
+    this.clipboard = new ClipboardBridge({ clipboard, ClipboardItem, sequence: () => win32()?.getClipboardSequenceNumber() ?? null, files: clipboardFiles(ownerHwnd) });
+    this.clipTemp = new ClipTemp(path.join(app.getPath('temp'), 'Remoto-appunti'));
+    this.clipTemp.cleanAll();
 
     this.link = new ServerLink({
       getIdentity: () => this.identity(),
@@ -109,6 +119,7 @@ export class RemotoApp {
     this.hostSide = new HostSide(this);
     this.viewerSide = new ViewerSide(this);
     this.serviceManager = new ServiceManager({ logger: this.log });
+    this.cable = new VirtualCableInstaller({ dir: path.join(app.getPath('temp'), 'Remoto-cavo-audio'), fetch: (url) => net.fetch(url), logger: this.log });
     this.serviceCache = { supported: process.platform === 'win32', bundled: false, installed: false, running: false, canInstall: false, reason: '' };
     this.host = this.hostSide.manager;
     this.viewer = this.viewerSide.manager;
@@ -187,6 +198,8 @@ export class RemotoApp {
     const patch = {};
     if (process.env.REMOTO_SERVER_URL !== undefined) patch.network = { serverUrl: process.env.REMOTO_SERVER_URL };
     if (process.env.REMOTO_NAME) patch.profile = { name: sanitizeName(process.env.REMOTO_NAME) };
+    // i test girano sul PC dello sviluppatore: le sue casse e i suoi microfoni non si toccano
+    if (process.env.REMOTO_AUDIO_EXCLUSIVE !== undefined) patch.audio = { exclusive: process.env.REMOTO_AUDIO_EXCLUSIVE !== '0' };
     if (Object.keys(patch).length) this.config.update(patch);
   }
 
@@ -349,6 +362,19 @@ export class RemotoApp {
     return { ...this.serviceCache, ...this.hostSide.serviceState() };
   }
 
+  /** Installa VB-CABLE (pacchetto ufficiale, firma verificata, UAC): poi la voce di chi controlla lo usa da sola. */
+  async installVirtualCable() {
+    const step = (s) => {
+      this.windows.sendRole('home', 'audio:cable-step', s);
+      this.windows.sendRole('panel', 'audio:cable-step', s);
+    };
+    const r = await this.cable.install(step);
+    step(r.ok ? 'done' : 'failed');
+    // i dispositivi nuovi compaiono dopo qualche istante: l'engine ricollega il microfono remoto
+    if (r.ok) setTimeout(() => this.hostSide.audioPrefsChanged(), 3000);
+    return r;
+  }
+
   async installService() {
     const r = await this.serviceManager.install();
     await this.serviceStatus();
@@ -425,8 +451,17 @@ export class RemotoApp {
     return win;
   }
 
+  /** File ricevuti dagli appunti dell'altro PC (cartella creata da clipTemp) → appunti di questo PC. */
+  async applyClipboardFiles(dir) {
+    if (!this.clipTemp.owns(dir)) throw new Error('Cartella non valida');
+    const paths = await this.clipTemp.entries(dir);
+    if (!paths.length || !this.clipboard.applyFiles(paths)) throw new Error('Appunti di Windows non disponibili');
+    this.log.info(`appunti: ${paths.length} file pronti da incollare`);
+    return { count: paths.length, names: paths.map((p) => path.basename(p)).slice(0, 5) };
+  }
+
   copyText(text) {
-    clipboard.writeText(String(text ?? ''));
+    Promise.resolve(clipboard.writeText(String(text ?? ''))).catch(() => {});
   }
 
   notify(title, body, onClick) {

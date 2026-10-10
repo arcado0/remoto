@@ -1,6 +1,7 @@
 // Impostazioni: Generale, Sicurezza, Rete, Visualizzazione, Registro accessi, Informazioni.
 import { h, icon } from '../lib/dom.js';
 import { toast, confirmDialog, switchEl } from '../lib/ui.js';
+import { installCable } from '../lib/cable.js';
 import { PERMISSIONS } from '../../shared/permissions.js';
 import { QUALITY_PRESETS, CODECS } from '../../shared/quality.js';
 import { formatId, normalizeId } from '../../shared/ids.js';
@@ -263,7 +264,7 @@ function display(body, H, api) {
 }
 
 /** Cavi audio virtuali riconosciuti (stessa regola dell'engine). */
-const VIRTUAL_CABLE = /(CABLE[- ]?(A |B )?Input|VB-Audio|Virtual Audio Cable|Voicemeeter.*(Input|VAIO)|Hi-Fi Cable|Virtual Cable)/i;
+const VIRTUAL_CABLE = /(CABLE[- ]?(A |B )?Input|VB-Audio|Virtual Audio Cable|Voicemeeter.*(Input|VAIO)|Hi-Fi Cable|Virtual Cable|Steam Streaming Microphone)/i;
 
 async function audio(body, H, api) {
   let devices = [];
@@ -293,13 +294,29 @@ async function audio(body, H, api) {
     ),
     group(
       'Quando qualcuno si collega a questo PC',
+      row(
+        'Casse e microfono di chi si collega',
+        'Come Desktop remoto di Windows: durante la sessione le casse di questo PC tacciono (l’audio arriva solo a chi controlla) e, con un cavo audio virtuale, le app usano la sua voce come microfono mentre i microfoni di questo PC vengono silenziati. A fine sessione tutto torna com’era.',
+        switchEl({ checked: a.exclusive !== false, ariaLabel: 'Casse e microfono di chi si collega', onChange: (x) => api.update({ audio: { exclusive: x } }) }),
+      ),
       row('Microfono di chi si collega', 'Dove Remoto riproduce la voce di chi è collegato. Con un cavo audio virtuale le app di questo PC la ricevono come microfono.', select(a.micSink || 'auto', sinkOptions, (x) => api.update({ audio: { micSink: x, micSinkLabel: outputs.find((d) => d.deviceId === x)?.label || '' } }), 'Microfono di chi si collega')),
       row(
         h('span', { class: 'row' }, icon(cable ? 'check' : 'info', 'sm'), cable ? 'Cavo audio virtuale presente' : 'Nessun cavo audio virtuale'),
         cable
-          ? h('span', null, `Nelle app di questo PC scegli come microfono il lato "Output" di "${cable.label.replace(/ ?\(.*\)$/, '')}" (con VB-CABLE: "CABLE Output").`)
-          : h('span', null, 'Windows non permette a un programma di creare un microfono senza driver: installa una volta un cavo audio virtuale, ad esempio ', h('a', { onClick: () => remoto.invoke('app:open-external', 'https://vb-audio.com/Cable/') }, 'VB-CABLE (gratuito)'), ', poi in Teams scegli "CABLE Output" come microfono.'),
-        null,
+          ? h(
+              'span',
+              null,
+              a.exclusive !== false
+                ? `Durante le sessioni Remoto rende il lato "Output" di "${cable.label.replace(/ ?\(.*\)$/, '')}" il microfono predefinito di questo PC: nelle app lascia il microfono "Predefinito".`
+                : `Nelle app di questo PC scegli come microfono il lato "Output" di "${cable.label.replace(/ ?\(.*\)$/, '')}" (con VB-CABLE: "CABLE Output").`,
+            )
+          : h(
+              'span',
+              null,
+              'Windows non permette a un programma di creare un microfono senza un driver, nemmeno nella versione portable. Remoto può installare per te VB-CABLE (gratuito): lo scarica dal sito ufficiale, ne verifica la firma e chiede la conferma di amministratore. ',
+              h('a', { onClick: () => remoto.invoke('audio:cable-page') }, 'Pagina ufficiale'),
+            ),
+        cable ? null : h('button', { class: 'btn sm primary', onClick: (e) => installCable(e.currentTarget, { onDone: () => setTimeout(() => api.rerender?.(), 4000) }) }, icon('download', 'sm'), 'Installa VB-CABLE'),
       ),
     ),
   );

@@ -28,6 +28,8 @@ remoto.on('engine:host-clipboard', (ids, payload) => ids.forEach((id) => peers.g
 remoto.on('engine:host-chat', (id, text) => peers.get(id)?.sendChat(text));
 remoto.on('engine:displays-changed', (displays) => peers.forEach((p) => p.displaysChanged(displays).catch(() => {})));
 remoto.on('engine:audio-prefs-changed', () => peers.forEach((p) => p.routeMic().catch(() => {})));
+// un cavo audio virtuale appena installato (o scollegato): la voce di chi controlla si sposta da sola
+navigator.mediaDevices.addEventListener('devicechange', () => peers.forEach((p) => p.routeMic().catch(() => {})));
 // controllo completo e desktop protetto (UAC/blocco): valgono per tutte le sessioni attive
 remoto.on('engine:caps', (caps) => peers.forEach((p) => p.setCaps(caps)));
 remoto.on('engine:secure', (on) => peers.forEach((p) => p.setSecure(Boolean(on))));

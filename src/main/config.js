@@ -31,8 +31,9 @@ export function defaultConfig() {
       lockOnEnd: false,
     },
     viewer: { quality: 'balanced', codec: 'auto', scaleMode: 'fit', showStats: false, clipboardSync: true, audio: true, micDevice: '', micLabel: '', speakerDevice: '' },
-    // microfono di chi si collega: 'auto' = cavo audio virtuale se presente, 'none', 'default' o un dispositivo
-    audio: { micSink: 'auto', micSinkLabel: '' },
+    // microfono di chi si collega: 'auto' = cavo audio virtuale se presente, 'none', 'default' o un dispositivo.
+    // exclusive: durante le sessioni le casse di questo PC tacciono e il microfono è quello di chi controlla
+    audio: { micSink: 'auto', micSinkLabel: '', exclusive: true },
     general: { theme: 'system', startWithWindows: false, closeToTray: true, sounds: true, trayHintShown: false },
     addressBook: [],
     recent: [],
@@ -103,6 +104,7 @@ export class ConfigStore extends EventEmitter {
     c.security.acl = Array.isArray(c.security.acl) ? c.security.acl.filter((x) => typeof x === 'string') : [];
     for (const k of ['addressBook', 'recent', 'accessLog']) if (!Array.isArray(c[k])) c[k] = [];
     c.profile.name = sanitizeName(c.profile.name, sanitizeName(os.hostname(), 'Postazione'));
+    c.audio.exclusive = c.audio.exclusive !== false;
     return c;
   }
 

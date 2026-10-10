@@ -8,7 +8,6 @@ import { launchRemoto, windowWith, closeRemoto } from '../launch.js';
 
 const out = process.argv[2] || '.';
 const theme = process.argv[3] || 'light';
-const PASSWORD = 'Prova-Remoto-2026';
 const until = async (fn, ms = 20000) => {
   const end = Date.now() + ms;
   for (;;) {
@@ -47,7 +46,6 @@ try {
   await until(() => viewer.app.evaluate(() => globalThis.__remoto?.link.state === 'online'));
   for (const app of [host.app, viewer.app]) await app.evaluate((_e, t) => globalThis.__remoto.updateConfig({ general: { theme: t } }), theme);
   const hostId = await host.app.evaluate(() => globalThis.__remoto.identity().id);
-  await host.app.evaluate((_e, pw) => globalThis.__remoto.setUnattendedPassword(pw), PASSWORD);
 
   const home = await windowWith(viewer.app, 'home/index.html');
   await home.fill('.connect-input input', hostId);
@@ -57,9 +55,8 @@ try {
   const prompt = await windowWith(host.app, 'prompt/prompt.html');
   await pause(400);
   await prompt.screenshot({ path: path.join(out, `${theme}-prompt.png`) });
-  await sess.waitForSelector('input[type=password]');
-  await sess.fill('input[type=password]', PASSWORD);
-  await sess.click('button:has-text("Accedi")');
+  // niente password: ogni connessione si accetta sul PC controllato
+  await prompt.click('button:has-text("Accetta")');
   await until(() => sess.evaluate(() => window.__remotoSession?.state.ui.state === 'connected'));
   await until(() => sess.evaluate(() => document.getElementById('screen').videoWidth > 0));
   await pause(2500);
@@ -120,7 +117,7 @@ try {
   await home.screenshot({ path: path.join(out, `${theme}-home.png`) });
   if (theme === 'light') {
     await home.click('button[aria-label="Impostazioni"]');
-    for (const [label, name] of [['Generale', 'set-generale'], ['Sicurezza', 'set-sicurezza'], ['Rete', 'set-rete'], ['Visualizzazione', 'set-visualizzazione'], ['Registro accessi', 'set-registro'], ['Informazioni', 'set-info']]) {
+    for (const [label, name] of [['Generale', 'set-generale'], ['Sicurezza', 'set-sicurezza'], ['Rete', 'set-rete'], ['Visualizzazione', 'set-visualizzazione'], ['Audio', 'set-audio'], ['Registro accessi', 'set-registro'], ['Informazioni', 'set-info']]) {
       await home.click(`.settings-nav button:has-text("${label}")`);
       await pause(350);
       await home.screenshot({ path: path.join(out, `${theme}-${name}.png`) });

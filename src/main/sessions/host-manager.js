@@ -133,6 +133,8 @@ export class HostManager extends EventEmitter {
     const me = this.getIdentity();
     s.viewerName = sanitizeName(data.name, 'Sconosciuto');
     s.mode = data.mode === 'files' ? 'files' : 'desktop';
+    // indirizzi IPv4 dichiarati da chi si collega: servono solo a capire se è nella stessa LAN
+    s.viewerAddrs = Array.isArray(data.addrs) ? data.addrs.filter((a) => typeof a === 'string' && /^\d{1,3}(\.\d{1,3}){3}$/.test(a)).slice(0, 8) : [];
     s.prefs = sanitizePrefs(data.prefs);
     if (data.v !== undefined && data.v !== PROTOCOL_VERSION) return this.#close(s, 'version');
     if (!st.allowIncoming) return this.#close(s, 'disabled');
@@ -176,7 +178,7 @@ export class HostManager extends EventEmitter {
     s.acceptedAt = this.now();
     s.perms = permissionsForMode(sanitizePermissions(perms, st.permissions), s.mode);
     this.#send(s, { k: 'accept', id: me.id, name: me.name, mode: s.mode, perms: s.perms });
-    this.engine.start({ id: s.id, mode: s.mode, perms: s.perms, prefs: s.prefs, viewerId: s.viewerId, viewerName: s.viewerName, kind: s.kind });
+    this.engine.start({ id: s.id, mode: s.mode, perms: s.perms, prefs: s.prefs, viewerId: s.viewerId, viewerName: s.viewerName, kind: s.kind, viewerAddrs: s.viewerAddrs || [] });
     s.timers.negotiation = setTimeout(() => {
       if (s.state === 'connecting') this.#close(s, 'webrtc-failed');
     }, this.timeouts.negotiationMs);

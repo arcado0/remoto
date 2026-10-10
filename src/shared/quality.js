@@ -8,11 +8,18 @@
  */
 export const CAPTURE_FRAMERATE = 60;
 
-// contentHint: 'detail' (testo più nitido, ma con contenuti in movimento i fotogrammi grandi si
-// accodano nell'invio e la latenza sale a centinaia di ms) oppure 'motion' (reattivo, testo un po'
-// meno definito). La qualità "ottimale" resta a chi la sceglie per leggere documenti.
+/**
+ * Banda del video nelle sessioni in rete locale (kbit/s): si parte già alti invece di ~300 kbit/s e la
+ * stima non può scendere sotto il minimo per le oscillazioni del Wi-Fi (vedi withVideoBitrates in sdp.js).
+ * Il massimo resta quello del preset.
+ */
+export const LAN_BITRATES = Object.freeze({ startKbps: 10_000, minKbps: 1_500 });
+
+// contentHint 'motion' per tutti: con 'detail' (contenuto "schermo") i fotogrammi grandi si accodano
+// nell'invio e, con contenuti in movimento, la latenza saliva a ~500 ms (p90); con 'motion' resta ~60 ms
+// ed è anche più nitido in movimento. "Qualità" non abbassa mai la risoluzione e ha più banda.
 export const QUALITY_PRESETS = Object.freeze({
-  quality: { label: 'Qualità ottimale', maxBitrate: 20_000_000, maxFramerate: 60, scale: 1, contentHint: 'detail', degradation: 'maintain-resolution' },
+  quality: { label: 'Qualità ottimale', maxBitrate: 30_000_000, maxFramerate: 60, scale: 1, contentHint: 'motion', degradation: 'maintain-resolution' },
   balanced: { label: 'Bilanciata', maxBitrate: 12_000_000, maxFramerate: 60, scale: 1, contentHint: 'motion', degradation: 'balanced' },
   speed: { label: 'Velocità', maxBitrate: 2_000_000, maxFramerate: 30, scale: 1.5, contentHint: 'motion', degradation: 'maintain-framerate' },
 });

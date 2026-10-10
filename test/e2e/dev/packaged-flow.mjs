@@ -8,7 +8,7 @@ const EXE = path.resolve('out/win-unpacked/Remoto.exe');
 const until = async (fn, ms = 30000) => { const end = Date.now() + ms; for (;;) { const v = await fn(); if (v) return v; if (Date.now() > end) throw new Error('timeout'); await new Promise((r) => setTimeout(r, 200)); } };
 async function launch(name) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), `remoto-pkg-${name}-`));
-  const app = await electron.launch({ executablePath: EXE, args: [], env: { ...process.env, REMOTO_PROFILE_DIR: profile, REMOTO_NAME: name, REMOTO_DIRECT_HOST: '127.0.0.1', REMOTO_DIRECT_PORT: '0', REMOTO_DISCOVERY: '0', REMOTO_E2E: '1', REMOTO_SERVER_URL: '' }, timeout: 60000 });
+  const app = await electron.launch({ executablePath: EXE, args: [], env: { ...process.env, REMOTO_PROFILE_DIR: profile, REMOTO_NAME: name, REMOTO_DIRECT_HOST: '127.0.0.1', REMOTO_DIRECT_PORT: '0', REMOTO_DISCOVERY: '0', REMOTO_E2E: '1', REMOTO_AUDIO_EXCLUSIVE: '0', REMOTO_SERVER_URL: '' }, timeout: 60000 });
   return { app, profile };
 }
 const host = await launch('Host');

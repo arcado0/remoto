@@ -29,6 +29,7 @@ export class ViewerSide {
       // segnalazione UDP in LAN: passa anche se il firewall dell'altro PC blocca le connessioni in entrata
       connectUdp: (opts) => ctl.lanUdp.connect(opts),
       udpPort: DEFAULT_PORTS.discovery,
+      getAddresses: () => ctl.localAddresses().filter((a) => !a.virtual).map((a) => a.address),
       getExtraIce: () => (Array.isArray(config.get().network.iceServers) ? config.get().network.iceServers : []),
     });
     this.manager.on('state', (s, patch) => this.#send(s.windowId, 'viewer:state', patch));
@@ -216,6 +217,22 @@ export class ViewerSide {
   applyClipboard(entry, payload) {
     const { w, s } = this.#byEntry(entry);
     if (w?.sync && s?.state === 'connected' && s.perms?.clipboard) this.ctl.clipboard.apply(payload);
+  }
+
+  #clipFilesAllowed(entry) {
+    const { w, s } = this.#byEntry(entry);
+    if (!w?.sync || s?.state !== 'connected' || !s.perms?.clipboard || !s.perms?.files) throw new Error('Copia di file tramite appunti non attiva');
+  }
+
+  /** File dagli appunti del PC remoto: cartella temporanea di questo PC, poi negli appunti. */
+  async clipFilesPrepare(entry) {
+    this.#clipFilesAllowed(entry);
+    return this.ctl.clipTemp.prepare();
+  }
+
+  async clipFilesApply(entry, dir) {
+    this.#clipFilesAllowed(entry);
+    return this.ctl.applyClipboardFiles(dir);
   }
 
   #onLocalClipboard(payload) {

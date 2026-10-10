@@ -1,8 +1,10 @@
 // Una sessione in arrivo vista dall'engine: cattura dello schermo, RTCPeerConnection (offerente),
 // canali dati. Ogni messaggio del viewer è filtrato sui permessi; il main ricontrolla comunque.
-import { getPreset, orderCodecs, CAPTURE_FRAMERATE } from '../../shared/quality.js';
+import { getPreset, orderCodecs, CAPTURE_FRAMERATE, LAN_BITRATES } from '../../shared/quality.js';
+import { withVideoBitrates } from '../../shared/sdp.js';
 import { TransferEngine } from '../lib/transfers.js';
 import { ClipboardAssembler, sendClipboard } from '../lib/clipchannel.js';
+import { ClipFiles } from '../lib/clipfiles.js';
 import { classifyPair, selectedPair } from '../../shared/netinfo.js';
 
 const INPUT_TYPES = new Set(['mb', 'mw', 'k', 'text', 'combo', 'release']);
@@ -11,7 +13,7 @@ const INPUT_TYPES = new Set(['mb', 'mw', 'k', 'text', 'combo', 'release']);
 const SECURE_FPS = 9;
 
 /** Cavi audio virtuali noti: lì si riproduce il microfono di chi si collega, che Teams & co. vedono come microfono. */
-export const VIRTUAL_CABLE = /(CABLE[- ]?(A |B )?Input|VB-Audio|Virtual Audio Cable|Voicemeeter.*(Input|VAIO)|Hi-Fi Cable|Virtual Cable)/i;
+export const VIRTUAL_CABLE = /(CABLE[- ]?(A |B )?Input|VB-Audio|Virtual Audio Cable|Voicemeeter.*(Input|VAIO)|Hi-Fi Cable|Virtual Cable|Steam Streaming Microphone)/i;
 
 function fsBackend(id) {
   const s = (op, ...args) => remoto.invoke('enginefs', id, op, ...args);
@@ -50,6 +52,9 @@ export class HostPeer {
     this.admin = info.admin;
     this.caps = info.caps || { fullControl: false, sas: false };
     this.platform = info.platform;
+    this.exclusiveAudio = Boolean(info.exclusiveAudio);
+    // stessa rete locale (connessione diretta, o via server nella stessa sottorete): banda di partenza e minima più alte
+    this.lan = Boolean(info.lan) || info.kind === 'direct';
     this.pendingIce = [];
     this.closed = false;
     this.reported = false;
@@ -78,7 +83,16 @@ export class HostPeer {
       channel: this.file,
       backend: fsBackend(this.id),
       canReceive: () => (this.perms.files ? true : 'Il trasferimento file non è consentito'),
-      onOther: (msg) => this.clip.add(msg),
+      onOther: (msg) => this.clipFiles?.handle(msg) || this.clip.add(msg),
+    });
+    // file copiati in Esplora risorse: viaggiano col trasferimento file e finiscono negli appunti dell'altro PC
+    this.clipFiles = new ClipFiles({
+      channel: this.file,
+      transfers: this.transfers,
+      backend: fsBackend(this.id),
+      prepare: () => remoto.invoke('engine:clipfiles-prepare', this.id),
+      apply: (dir) => remoto.invoke('engine:clipfiles-apply', this.id, dir),
+      allowed: () => Boolean(this.perms.clipboard && this.perms.files),
     });
     this.clip = new ClipboardAssembler((payload) => {
       if (this.perms.clipboard) remoto.send('engine:clipboard-in', this.id, payload);
@@ -131,6 +145,7 @@ export class HostPeer {
     }
     const audioTrack = this.stream.getAudioTracks()[0];
     if (audioTrack) this.audioSender = this.pc.addTransceiver(audioTrack, { direction: 'sendonly', streams: [this.stream] }).sender;
+    this.#reportAudioOut();
     // microfono di chi si collega: il canale c'è sempre, il viewer ci attacca la traccia quando vuole
     this.micTransceiver = this.pc.addTransceiver('audio', { direction: 'recvonly' });
     this.pc.addEventListener('track', (e) => {
@@ -242,7 +257,11 @@ export class HostPeer {
     let device = null;
     if (prefs.micSink === 'default') device = { deviceId: '', label: 'Altoparlanti predefiniti' };
     else if (prefs.micSink && prefs.micSink !== 'auto') device = outputs.find((d) => d.deviceId === prefs.micSink) || outputs.find((d) => d.label && d.label === prefs.micSinkLabel) || null;
-    if (!device) device = outputs.find((d) => d.deviceId !== 'default' && d.deviceId !== 'communications' && VIRTUAL_CABLE.test(d.label)) || null;
+    if (!device) {
+      // prima VB-CABLE, poi gli altri cavi riconosciuti (Voicemeeter, Steam Streaming Microphone…)
+      const cables = outputs.filter((d) => d.deviceId !== 'default' && d.deviceId !== 'communications' && VIRTUAL_CABLE.test(d.label));
+      device = cables.find((d) => /VB-Audio|CABLE/i.test(d.label)) || cables[0] || null;
+    }
     if (!device) {
       this.#stopMic();
       return report(false, { reason: 'no-virtual-device' });
@@ -260,7 +279,7 @@ export class HostPeer {
       return report(false, { reason: 'sink-error', error: err.message });
     }
     this.micRoutedTo = device.label || 'dispositivo audio';
-    return report(true, { device: this.micRoutedTo });
+    return report(true, { device: this.micRoutedTo, exclusive: prefs.exclusive !== false && this.exclusiveAudio });
   }
 
   // ---------- segnalazione ----------
@@ -279,7 +298,8 @@ export class HostPeer {
     if (this.closed || !this.pc) return;
     try {
       if (data.k === 'sdp' && data.sdp?.type === 'answer') {
-        await this.pc.setRemoteDescription(data.sdp);
+        const lan = this.lan && window.__lanBitrates !== false;
+        await this.pc.setRemoteDescription(lan ? { type: 'answer', sdp: withVideoBitrates(data.sdp.sdp, LAN_BITRATES) } : data.sdp);
         for (const c of this.pendingIce.splice(0)) await this.pc.addIceCandidate(c).catch(() => {});
         await this.#applyQuality(this.prefs.quality);
       } else if (data.k === 'ice' && data.c) {
@@ -307,12 +327,65 @@ export class HostPeer {
     this.reported = true;
     const connType = await connectionType(this.pc);
     remoto.send('engine:state', this.id, 'connected', { connType });
+    this.#lanTuning(connType);
+    this.#startEncoderStats();
     // la coppia di candidati scelta può cambiare nei primi secondi: si aggiorna il dato
     setTimeout(async () => {
       if (this.closed) return;
       const later = await connectionType(this.pc);
       if (later && later !== connType) remoto.send('engine:state', this.id, 'info', { connType: later });
+      this.#lanTuning(later);
     }, 4000);
+  }
+
+  /**
+   * Ogni 2 s le statistiche dell'encoder vanno a chi controlla (pannello statistiche): quale encoder,
+   * fotogrammi e risoluzione inviati, cosa lo limita (banda, CPU). Servono a capire un video che scatta.
+   */
+  #startEncoderStats() {
+    if (this.encTimer || this.mode !== 'desktop') return;
+    let prev = null;
+    this.encTimer = setInterval(async () => {
+      if (this.closed || this.ctrl?.readyState !== 'open') return;
+      try {
+        const st = await this.pc.getStats();
+        let o = null;
+        let src = null;
+        let pair = null;
+        st.forEach((r) => {
+          if (r.type === 'outbound-rtp' && r.kind === 'video') o = r;
+          if (r.type === 'media-source' && r.kind === 'video') src = r;
+          if (r.type === 'transport' && r.selectedCandidatePairId) pair = st.get(r.selectedCandidatePairId);
+        });
+        if (!o) return;
+        const dFrames = prev ? o.framesEncoded - prev.framesEncoded : 0;
+        const per = (k) => (dFrames > 0 ? (o[k] - prev[k]) / dFrames : null);
+        this.#send({
+          t: 'enc',
+          impl: o.encoderImplementation || '',
+          hw: Boolean(o.powerEfficientEncoder),
+          fps: Math.round(o.framesPerSecond || 0),
+          capFps: Math.round(src?.framesPerSecond || 0),
+          w: o.frameWidth || 0,
+          h: o.frameHeight || 0,
+          limit: o.qualityLimitationReason || '',
+          target: o.targetBitrate || 0,
+          avail: pair?.availableOutgoingBitrate || 0,
+          encMs: per('totalEncodeTime') != null ? Math.round(per('totalEncodeTime') * 10000) / 10 : null,
+          qp: per('qpSum') != null ? Math.round(per('qpSum')) : null,
+        });
+        prev = { framesEncoded: o.framesEncoded, totalEncodeTime: o.totalEncodeTime || 0, qpSum: o.qpSum || 0 };
+      } catch {
+        /* statistiche non disponibili in questo momento */
+      }
+    }, 2000);
+  }
+
+  /** Sessione passata dal server ma i due PC sono nella stessa rete: si rinegozia con la banda da LAN. */
+  #lanTuning(connType) {
+    if (connType !== 'lan' || this.lan || this.closed || window.__lanBitrates === false) return;
+    this.lan = true;
+    this.#offer().catch((err) => console.warn('rinegoziazione LAN:', err.message));
   }
 
   // ---------- canali dati ----------
@@ -335,6 +408,8 @@ export class HostPeer {
       displays: this.mode === 'desktop' ? this.#publicDisplays() : [],
       active: this.active?.id || null,
       audio: Boolean(this.audioSender),
+      // casse di questo PC silenziate durante l'invio dell'audio, microfono di chi controlla come predefinito
+      exclusiveAudio: this.exclusiveAudio,
       quality: this.prefs.quality,
     });
   }
@@ -372,6 +447,7 @@ export class HostPeer {
         break;
       case 'audio':
         if (this.audioSender?.track) this.audioSender.track.enabled = Boolean(msg.on) && this.perms.audio;
+        this.#reportAudioOut();
         break;
       case 'chat':
         if (typeof msg.text === 'string' && msg.text.trim()) remoto.send('engine:chat-in', this.id, msg.text);
@@ -426,10 +502,19 @@ export class HostPeer {
 
   // ---------- comandi dal main ----------
 
+  /** Avvisa il main quando l'audio di sistema parte o si ferma: durante l'invio le casse locali tacciono. */
+  #reportAudioOut() {
+    const on = Boolean(this.audioSender?.track?.enabled && this.perms.audio && !this.closed);
+    if (on === this.audioOut) return;
+    this.audioOut = on;
+    remoto.send('engine:audio-out', this.id, on);
+  }
+
   setPerms(perms) {
     const micChanged = Boolean(this.perms.microphone) !== Boolean(perms.microphone);
     this.perms = perms;
     if (this.audioSender?.track && !perms.audio) this.audioSender.track.enabled = false;
+    this.#reportAudioOut();
     this.#send({ t: 'perms', perms });
     if (micChanged) this.routeMic().catch(() => {});
   }
@@ -489,6 +574,10 @@ export class HostPeer {
   }
 
   sendClipboard(payload) {
+    if (payload?.kind === 'files') {
+      this.clipFiles?.offer(payload.paths);
+      return;
+    }
     if (this.perms.clipboard && this.file?.readyState === 'open') sendClipboard(this.file, payload);
   }
 
@@ -499,6 +588,7 @@ export class HostPeer {
   close() {
     if (this.closed) return;
     this.closed = true;
+    clearInterval(this.encTimer);
     try {
       this.#send({ t: 'bye' });
     } catch {

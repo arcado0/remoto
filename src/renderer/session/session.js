@@ -15,6 +15,8 @@ import { ChatPanel } from './chat.js';
 import { FileManager, TransferList } from './files.js';
 import { TransferEngine, newXid } from '../lib/transfers.js';
 import { ClipboardAssembler, sendClipboard } from '../lib/clipchannel.js';
+import { ClipFiles } from '../lib/clipfiles.js';
+import { formatBytes } from '../../shared/format.js';
 
 const appEl = $('#app');
 const toolbarEl = $('#toolbar');
@@ -52,6 +54,7 @@ const S = {
   recorder: null,
   unread: 0,
   stats: null,
+  enc: null, // statistiche dell'encoder del PC remoto
   restarting: false,
   restartDeadline: 0,
   reconnectTimer: null,
@@ -119,6 +122,10 @@ const whiteboard = new Whiteboard({ canvas: $('#wb-canvas'), video, peer: () => 
 remoto.on('viewer:state', onState);
 remoto.on('viewer:signal', (data) => S.peer?.handleSignal(data));
 remoto.on('viewer:local-clipboard', (payload) => {
+  if (payload?.kind === 'files') {
+    S.clipFiles?.offer(payload.paths);
+    return;
+  }
   const ch = S.peer?.channels.file;
   if (ch && S.sync && S.perms.clipboard) sendClipboard(ch, payload);
 });
@@ -192,7 +199,9 @@ function teardownPeer() {
   S.peer?.close();
   S.peer = null;
   S.transfers = null;
+  S.clipFiles = null;
   probe = null;
+  S.enc = null;
   clearInterval(statsTimer);
   statsTimer = 0;
   video.srcObject = null;
@@ -227,9 +236,26 @@ function setupFileChannel(ch) {
     channel: ch,
     backend: localBackend,
     canReceive: () => 'Upload dal computer remoto non previsto',
-    onOther: (msg) => clipAsm.add(msg),
+    onOther: (msg) => S.clipFiles?.handle(msg) || clipAsm.add(msg),
+  });
+  S.clipFiles = new ClipFiles({
+    channel: ch,
+    transfers: S.transfers,
+    backend: localBackend,
+    prepare: () => remoto.invoke('viewer:clipfiles-prepare'),
+    apply: (dir) => remoto.invoke('viewer:clipfiles-apply', dir),
+    allowed: () => Boolean(S.sync && S.perms.clipboard && S.perms.files),
+    notify: onClipFiles,
   });
   transferList.bind(S.transfers);
+}
+
+/** Avvisi della copia di file tramite appunti. */
+function onClipFiles(event, d) {
+  if (event === 'ready') toast({ kind: 'ok', title: 'File dal PC remoto negli appunti', text: `${d.count === 1 ? d.names?.[0] || '1 elemento' : `${d.count} elementi`}: incollali dove vuoi con Ctrl+V.` });
+  else if (event === 'sent') toast({ kind: 'ok', title: 'File negli appunti del PC remoto', text: 'Ora puoi incollarli sul PC remoto con Ctrl+V.' });
+  else if (event === 'too-big' || event === 'skipped') toast({ kind: 'info', title: 'File troppo grandi per gli appunti', text: `${formatBytes(d.total)}: per copiarli usa il pannello File.` });
+  else if (event === 'failed') toast({ kind: 'bad', title: 'Copia dei file non riuscita', text: d.error || '' });
 }
 
 // ---------------------------------------------------------------- messaggi dal PC remoto
@@ -314,11 +340,14 @@ function onCtrl(msg) {
     case 'notice':
       toast({ kind: msg.kind === 'error' ? 'bad' : 'info', title: msg.text || 'Avviso dal computer remoto' });
       return;
+    case 'enc':
+      S.enc = msg;
+      break;
     case 'mic-status':
       S.mic.status = msg;
       if (!msg.ok && msg.reason === 'no-virtual-device' && S.mic.track && !S.mic.warned) {
         S.mic.warned = true;
-        toast({ kind: 'info', title: 'Sul PC remoto manca un cavo audio virtuale', text: 'Il tuo microfono arriva, ma le app (Teams…) non possono usarlo: installa VB-CABLE sul PC remoto e scegli "CABLE Output" come microfono.', timeout: 12000 });
+        toast({ kind: 'info', title: 'Sul PC remoto manca un cavo audio virtuale', text: 'Il tuo microfono arriva, ma le app (Teams…) non possono usarlo. Chi è al PC remoto può installarlo con un clic: pannello di Remoto › Installa (serve la sua conferma di amministratore).', timeout: 14000 });
       }
       break;
     case 'caps':
@@ -582,7 +611,14 @@ async function audioMenu(el) {
   const micBlocked = !p.microphone || !S.peer?.micAvailable;
   openMenu(el, [
     { title: 'Audio del PC remoto' },
-    { label: S.audio ? 'Ascolto attivo' : 'Ascolto disattivato', sub: S.hello?.audio ? 'Clic per cambiare' : 'Il PC remoto non trasmette audio', icon: S.audio ? 'volume' : 'volume-x', checked: S.audio && S.hello?.audio, disabled: !S.hello?.audio, onClick: () => toggleAudio() },
+    {
+      label: S.audio ? 'Ascolto attivo' : 'Ascolto disattivato',
+      sub: !S.hello?.audio ? 'Il PC remoto non trasmette audio' : S.audio && S.hello?.exclusiveAudio ? 'Le casse del PC remoto sono silenziate: l’audio esce solo qui' : 'Clic per cambiare',
+      icon: S.audio ? 'volume' : 'volume-x',
+      checked: S.audio && S.hello?.audio,
+      disabled: !S.hello?.audio,
+      onClick: () => toggleAudio(),
+    },
     ...outputs.map((d) => ({ label: d.label || 'Uscita audio', sub: 'Ascolta su questo dispositivo', icon: 'headphones', checked: (S.speaker || 'default') === d.deviceId, onClick: () => selectSpeaker(d.deviceId) })),
     { divider: true },
     { title: 'Microfono per le app del PC remoto' },
@@ -595,8 +631,9 @@ async function audioMenu(el) {
       disabled: micBlocked,
       onClick: () => selectMic(d.deviceId, d.label),
     })),
-    S.mic.track && st?.ok ? { label: `Sul PC remoto è il microfono "${st.device}"`, sub: 'Nelle app scegli il lato "Output" del cavo virtuale', icon: 'check', disabled: true } : null,
-    S.mic.track && st && !st.ok && st.reason === 'no-virtual-device' ? { label: 'Sul PC remoto manca un cavo audio virtuale', sub: 'Installa VB-CABLE sul PC remoto', icon: 'alert', disabled: true } : null,
+    S.mic.track && st?.ok && st.exclusive ? { label: 'Sul PC remoto la tua voce è il microfono predefinito', sub: 'I suoi microfoni sono silenziati; nelle app lascia il microfono "Predefinito"', icon: 'check', disabled: true } : null,
+    S.mic.track && st?.ok && !st.exclusive ? { label: `Sul PC remoto è il microfono "${st.device}"`, sub: 'Nelle app scegli il lato "Output" del cavo virtuale', icon: 'check', disabled: true } : null,
+    S.mic.track && st && !st.ok && st.reason === 'no-virtual-device' ? { label: 'Sul PC remoto manca un cavo audio virtuale', sub: 'Si installa con un clic dal pannello di Remoto sul PC remoto', icon: 'alert', disabled: true } : null,
     S.mic.track && st && !st.ok && st.reason === 'disabled' ? { label: 'Il PC remoto non usa microfoni esterni', sub: 'Impostazioni › Audio sul PC remoto', icon: 'alert', disabled: true } : null,
   ]);
 }
@@ -1031,7 +1068,7 @@ async function updateStats() {
 
 function renderStatsOverlay() {
   if (!S.showStats || !S.stats) return;
-  replace(statsEl, statsRows(S.stats).map(([k, v]) => h('div', { class: 'st-row' }, h('span', null, k), h('span', null, v))));
+  replace(statsEl, statsRows(S.stats, S.enc).map(([k, v]) => h('div', { class: 'st-row' }, h('span', null, k), h('span', null, v))));
 }
 
 // aggancio per i test end-to-end (visibile solo dentro questa pagina)

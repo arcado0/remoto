@@ -74,6 +74,9 @@ export function registerIpc(ctl) {
   handle('host:show-prompt', HOME, (_e, id) => ctl.hostSide.showPrompt(String(id)));
   handle('service:status', HOME, () => ctl.serviceStatus());
   handle('service:install', HOME, () => ctl.installService());
+  // cavo audio virtuale: dalle impostazioni o dal pannello della sessione (lo conferma chi è al PC, con l'UAC)
+  handle('audio:install-cable', ['home', 'panel'], () => ctl.installVirtualCable());
+  handle('audio:cable-page', ['home', 'panel'], () => shell.openExternal('https://vb-audio.com/Cable/'));
   handle('service:uninstall', HOME, () => ctl.uninstallService());
 
   // ---------------- richiesta in arrivo ----------------
@@ -104,7 +107,9 @@ export function registerIpc(ctl) {
   on('viewer:host-info', SESSION, (e, info) => ctl.viewerSide.hostInfo(e, info));
   on('viewer:perms', SESSION, (e, perms) => ctl.viewerSide.updatePerms(e, perms));
   on('viewer:clipboard-apply', SESSION, (e, payload) => ctl.viewerSide.applyClipboard(e, payload));
-  handle('viewer:clipboard-text', SESSION, () => clipboard.readText().slice(0, 100_000));
+  handle('viewer:clipfiles-prepare', SESSION, (e) => ctl.viewerSide.clipFilesPrepare(e));
+  handle('viewer:clipfiles-apply', SESSION, (e, dir) => ctl.viewerSide.clipFilesApply(e, dir));
+  handle('viewer:clipboard-text', SESSION, async () => String((await clipboard.readText()) || '').slice(0, 100_000));
   handle('viewer:screenshot', SESSION, (e, data) => ctl.viewerSide.saveScreenshot(e, data));
   handle('viewer:rec-open', SESSION, (e, ext) => ctl.viewerSide.recordOpen(e, ext));
   on('viewer:rec-write', SESSION, (e, h, data) => ctl.viewerSide.recordWrite(e, h, data));
@@ -139,6 +144,8 @@ export function registerIpc(ctl) {
   on('engine:input', ENGINE, (_e, id, msg) => hs.onInput(String(id), msg));
   on('engine:display', ENGINE, (_e, id, displayId) => hs.onDisplay(String(id), displayId));
   on('engine:clipboard-in', ENGINE, (_e, id, payload) => hs.onClipboardIn(String(id), payload));
+  handle('engine:clipfiles-prepare', ENGINE, (_e, id) => hs.clipFilesPrepare(String(id)));
+  handle('engine:clipfiles-apply', ENGINE, (_e, id, dir) => hs.clipFilesApply(String(id), dir));
   on('engine:chat-in', ENGINE, (_e, id, text) => hs.onChatIn(String(id), text));
   on('engine:wb', ENGINE, (_e, id, msg) => hs.onWhiteboard(String(id), msg));
   handle('engine:privacy', ENGINE, (_e, id, onoff) => hs.setPrivacy(String(id), onoff));
@@ -149,6 +156,7 @@ export function registerIpc(ctl) {
   handle('engine:macs', ENGINE, async () => (await import('./net/discovery.js')).localMacs());
   handle('engine:audio-prefs', ENGINE, () => ctl.config.get().audio);
   on('engine:mic', ENGINE, (_e, id, info) => hs.onMic(String(id), info));
+  on('engine:audio-out', ENGINE, (_e, id, on) => hs.onAudioOut(String(id), Boolean(on)));
 }
 
 /** Dalla finestra principale si accettano solo i rami di configurazione modificabili. */
@@ -159,7 +167,7 @@ function sanitizeHomePatch(patch) {
   if (patch.profile) out.profile = pick(patch.profile, ['name']);
   if (patch.general) out.general = pick(patch.general, ['theme', 'startWithWindows', 'closeToTray', 'sounds']);
   if (patch.viewer) out.viewer = pick(patch.viewer, ['quality', 'codec', 'scaleMode', 'showStats', 'clipboardSync', 'audio', 'micDevice', 'micLabel', 'speakerDevice']);
-  if (patch.audio) out.audio = pick(patch.audio, ['micSink', 'micSinkLabel']);
+  if (patch.audio) out.audio = pick(patch.audio, ['micSink', 'micSinkLabel', 'exclusive']);
   if (patch.embeddedServer) out.embeddedServer = pick(patch.embeddedServer, ['enabled', 'port']);
   if (patch.network) {
     out.network = pick(patch.network, ['serverUrl', 'direct', 'discovery', 'iceServers']);

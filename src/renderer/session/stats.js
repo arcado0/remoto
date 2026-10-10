@@ -38,7 +38,25 @@ export class StatsProbe {
   }
 }
 
-export function statsRows(s) {
+const LIMITS = { none: 'niente', bandwidth: 'banda', cpu: 'CPU del PC remoto', other: 'altro' };
+
+/** "MediaFoundationVideoEncodeAccelerator (NVIDIA H.264 Encoder MFT)" → "NVIDIA H.264 Encoder MFT". */
+export function encoderName(impl) {
+  const m = /\(([^)]+)\)\s*$/.exec(String(impl || ''));
+  return m ? m[1] : String(impl || '');
+}
+
+/** Righe del pannello statistiche: video ricevuto qui e, se arrivato, encoder del PC remoto. */
+export function statsRows(s, enc = null) {
+  const remote = enc
+    ? [
+        ['Encoder remoto', `${encoderName(enc.impl) || '—'}${enc.hw ? ' (hardware)' : ''}`],
+        ['Inviati', `${enc.fps} fps · ${enc.w}×${enc.h}${enc.capFps ? ` · cattura ${enc.capFps} fps` : ''}`],
+        ['Limitato da', LIMITS[enc.limit] || enc.limit || '—'],
+        ['Banda stimata', enc.avail ? formatBitrate(enc.avail) : '—'],
+        enc.encMs != null ? ['Codifica', `${enc.encMs} ms per fotogramma${enc.qp != null ? ` · QP ${enc.qp}` : ''}`] : null,
+      ]
+    : [];
   return [
     ['Collegamento', CONN_LABELS[s.conn] || '—'],
     ['Latenza (RTT)', s.rtt != null ? `${s.rtt} ms` : '—'],
@@ -49,5 +67,6 @@ export function statsRows(s) {
     s.decoder ? ['Decoder', s.decoder] : null,
     ['Pacchetti persi', String(s.lost)],
     ['Jitter', s.jitter != null ? `${s.jitter} ms` : '—'],
+    ...remote,
   ].filter(Boolean);
 }

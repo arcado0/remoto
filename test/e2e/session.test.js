@@ -321,6 +321,50 @@ test('appunti sincronizzati nei due sensi', async () => {
   await until(() => V(() => globalThis.__clip?.data?.length === 500_000), 10_000, 'appunti grandi sul viewer');
 });
 
+test('copia e incolla di file nei due sensi (Esplora risorse → appunti dell’altro PC)', async () => {
+  // gli appunti veri di Windows non si toccano: si intercetta la scrittura dei file ricevuti
+  for (const app of [H, V]) {
+    await app(() => {
+      globalThis.__clipFiles = null;
+      globalThis.__remoto.clipboard.applyFiles = (paths) => {
+        globalThis.__clipFiles = paths;
+        return true;
+      };
+    });
+  }
+  const src = path.join(tmp, 'da-copiare');
+  fs.mkdirSync(path.join(src, 'Cartella', 'sotto'), { recursive: true });
+  fs.writeFileSync(path.join(src, 'relazione.docx'), crypto.randomBytes(300_000));
+  fs.writeFileSync(path.join(src, 'Cartella', 'sotto', 'nota.txt'), 'nota negli appunti');
+  const copied = [path.join(src, 'relazione.docx'), path.join(src, 'Cartella')];
+
+  // dal viewer all'host
+  await V((_e, paths) => globalThis.__remoto.clipboard.emit('change', { kind: 'files', paths }), copied);
+  const onHost = await until(() => H(() => globalThis.__clipFiles), 15_000, 'file negli appunti dell’host');
+  assert.deepEqual(onHost.map((p) => path.basename(p)).sort(), ['Cartella', 'relazione.docx']);
+  const hostDoc = onHost.find((p) => p.endsWith('relazione.docx'));
+  assert.equal(sha(hostDoc), sha(path.join(src, 'relazione.docx')));
+  assert.equal(fs.readFileSync(path.join(path.dirname(hostDoc), 'Cartella', 'sotto', 'nota.txt'), 'utf8'), 'nota negli appunti');
+  assert.match(path.dirname(hostDoc), /Remoto-appunti/, 'i file ricevuti stanno nella cartella temporanea di Remoto');
+
+  // dall'host al viewer
+  await H((_e, paths) => globalThis.__remoto.clipboard.emit('change', { kind: 'files', paths }), [path.join(src, 'Cartella')]);
+  const onViewer = await until(() => V(() => globalThis.__clipFiles), 15_000, 'file negli appunti del viewer');
+  assert.deepEqual(onViewer.map((p) => path.basename(p)), ['Cartella']);
+  assert.equal(fs.readFileSync(path.join(onViewer[0], 'sotto', 'nota.txt'), 'utf8'), 'nota negli appunti');
+
+  // senza il permesso "File" la copia di file tramite appunti non parte
+  const id = await H(() => globalThis.__remoto.host.list()[0].id);
+  await H((_e, sid) => globalThis.__remoto.host.setPermissions(sid, { files: false }), id);
+  await until(() => S(() => window.__remotoSession.state.perms.files === false), 10_000, 'permesso file revocato');
+  await H(() => (globalThis.__clipFiles = null));
+  await V((_e, paths) => globalThis.__remoto.clipboard.emit('change', { kind: 'files', paths }), copied);
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.equal(await H(() => globalThis.__clipFiles), null);
+  await H((_e, sid) => globalThis.__remoto.host.setPermissions(sid, { files: true }), id);
+  await until(() => S(() => window.__remotoSession.state.perms.files === true), 10_000, 'permesso file ripristinato');
+});
+
 test('permessi cambiati dal PC remoto durante la sessione', async () => {
   const id = await H(() => globalThis.__remoto.host.list()[0].id);
   await H((_e, sid) => globalThis.__remoto.host.setPermissions(sid, { files: false }), id);

@@ -37,3 +37,33 @@ export function selectedPair(stats) {
   if (!pair) return null;
   return { pair, local: stats.get(pair.localCandidateId), remote: stats.get(pair.remoteCandidateId) };
 }
+
+const ipv4 = (s) => {
+  const p = String(s || '').split('.');
+  if (p.length !== 4) return null;
+  const n = p.map((x) => (/^\d{1,3}$/.test(x) ? Number(x) : NaN));
+  return n.every((x) => x >= 0 && x <= 255) ? ((n[0] << 24) | (n[1] << 16) | (n[2] << 8) | n[3]) >>> 0 : null;
+};
+
+/**
+ * Indirizzi IPv4 privati di chi si collega che stanno in una sottorete di questo PC: vuol dire
+ * stessa rete locale anche se la richiesta è passata dal server (si usa la banda da LAN da subito).
+ * @param {string[]} addrs  indirizzi dichiarati dall'altro PC
+ * @param {Record<string, {address: string, netmask: string, family: string|number, internal: boolean}[]>} interfaces
+ */
+export function sharesSubnet(addrs, interfaces) {
+  const nets = [];
+  for (const list of Object.values(interfaces || {})) {
+    for (const a of list || []) {
+      if ((a.family !== 'IPv4' && a.family !== 4) || a.internal || !a.netmask) continue;
+      const ip = ipv4(a.address);
+      const mask = ipv4(a.netmask);
+      if (ip !== null && mask !== null && mask !== 0) nets.push([(ip & mask) >>> 0, mask]);
+    }
+  }
+  return (addrs || []).some((x) => {
+    if (!isPrivateAddress(x)) return false;
+    const ip = ipv4(x);
+    return ip !== null && nets.some(([net, mask]) => ((ip & mask) >>> 0) === net);
+  });
+}

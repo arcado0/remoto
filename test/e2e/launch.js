@@ -21,6 +21,7 @@ export async function launchRemoto({ name, serverUrl = '', directPort = 0, env =
       REMOTO_DIRECT_PORT: String(directPort),
       REMOTO_DISCOVERY: '0',
       REMOTO_E2E: '1',
+      REMOTO_AUDIO_EXCLUSIVE: '0',
       ...env,
     },
     timeout: 60_000,

@@ -19,9 +19,9 @@ completo (finestre di amministratore, UAC, schermata di blocco, Ctrl+Alt+Canc).
 | Accesso | **solo con conferma**: finestra **Accetta/Rifiuta** con i permessi da concedere, elenco di ID autorizzati. Nessun accesso non presidiato né password |
 | Schermo | P2P (fallback TURN), più monitor, qualità *Ottimale / Bilanciata / Velocità*, codec H.264/VP9/VP8/AV1, adatta o dimensione originale, schermo intero, statistiche (FPS, banda, latenza, LAN/P2P/relay) |
 | Input | mouse (anche rotella orizzontale), tastiera per scancode (vale il layout del PC remoto), *Tasti speciali* (Win, Win+R, Alt+Tab, Ctrl+Maiusc+Esc, Alt+F4, **Ctrl+Alt+Canc** col servizio…), digitazione del testo degli appunti, sola visualizzazione |
-| Audio | audio di sistema del PC remoto **e microfono di chi si collega** riprodotto sul PC remoto: con un cavo audio virtuale le app del PC remoto (es. Teams) lo ricevono come microfono |
+| Audio | **come Desktop remoto di Windows**: durante la sessione le casse del PC remoto tacciono e l'audio esce solo da chi controlla; il **microfono di chi si collega** diventa il microfono del PC remoto (con un cavo audio virtuale, che Remoto installa con un clic anche dalla portable) |
 | Controllo completo | servizio di sistema facoltativo: finestre di amministratore, richieste **UAC**, **schermata di blocco** e **Ctrl+Alt+Canc**; si installa dall'app (richiede UAC) |
-| Appunti | sincronizzazione nei due sensi di testo e immagini |
+| Appunti | sincronizzazione nei due sensi di testo, immagini e **file**: copi file o cartelle in Esplora risorse su un PC e li incolli con Ctrl+V sull'altro |
 | File | file manager a due pannelli, upload/download di file e cartelle, nuova cartella, rinomina, elimina, trascinamento sul video o da Esplora risorse, modalità **solo trasferimento file** |
 | Collaborazione | chat, **lavagna** (penna ed evidenziatore che sfuma) disegnata sullo schermo remoto |
 | Privacy | **modalità privacy**: chi è davanti al PC remoto vede nero, chi controlla vede il desktop; blocco di mouse e tastiera locali (richiede amministratore) |
@@ -33,8 +33,8 @@ completo (finestre di amministratore, UAC, schermata di blocco, Ctrl+Alt+Canc).
 ## Avvio rapido
 
 1. Scarica dalla pagina [Releases](https://github.com/arcado0/remoto/releases/latest) l'installer
-   `Remoto-Setup-1.1.0.exe` (aggiunge la regola del Windows Firewall), oppure lo zip
-   `Remoto-1.1.0-portable-win64.zip`: estrailo e avvia `Remoto\Remoto.exe`, niente installazione,
+   `Remoto-Setup-1.2.0.exe` (aggiunge la regola del Windows Firewall), oppure lo zip
+   `Remoto-1.2.0-portable-win64.zip`: estrailo e avvia `Remoto\Remoto.exe`, niente installazione,
    niente Node, i dati restano nella cartella `Remoto-dati` accanto all'eseguibile. Chi parte dai
    sorgenti li ottiene in `dist/` con `npm run dist` (vedi [Sviluppo](#sviluppo)).
    Gli eseguibili non hanno una firma digitale: se Windows mostra *"Windows ha protetto il PC"*,
@@ -74,10 +74,16 @@ Misurato con `node test/e2e/dev/latency-probe.mjs` (stesso PC, schermo 2560×144
 del PC controllato al video di chi controlla passano **~50 ms** (prima erano ~180). Il guadagno viene
 da tre cose: il video si mostra appena decodificato, senza il buffer anti-jitter (field trial di
 WebRTC in `src/main/chromium-flags.js`); la cattura dello schermo a 60 fps (Windows Graphics Capture
-consegna immagini vecchie di circa due periodi di cattura); il preset *Bilanciata* che privilegia la
-reattività (con il contenuto "schermo" i fotogrammi grandi si accodavano nell'invio). Per leggere
-documenti con il testo più nitido c'è *Qualità ottimale*. L'input arriva in meno di 1 ms: il ritardo
-che si percepisce sul puntatore è quello del video.
+consegna immagini vecchie di circa due periodi di cattura); il contenuto "movimento" per tutti i
+preset (con il contenuto "schermo" i fotogrammi grandi si accodavano nell'invio: *Qualità ottimale*
+arrivava a ~500 ms con contenuti in movimento, ora ~60). In rete locale, anche quando la richiesta
+passa dal server, la banda parte già alta e non può scendere sotto un minimo: prima WebRTC si
+stimava pochi Mbit/s e, con *Bilanciata* e *Qualità*, perdeva fotogrammi e risoluzione. L'input
+arriva in meno di 1 ms: il ritardo che si percepisce sul puntatore è quello del video.
+
+Il pannello statistiche della sessione mostra anche l'encoder del PC remoto (hardware o no),
+fotogrammi e risoluzione inviati e cosa lo limita (*banda* o *CPU del PC remoto*): è il primo posto
+dove guardare se il video scatta.
 
 ### Controllo completo (finestre di amministratore, UAC, blocco, Ctrl+Alt+Canc)
 
@@ -91,15 +97,24 @@ installato in *Programmi* e solo durante una connessione accettata. Alcuni antiv
 segnalare un servizio che simula tastiera e mouse: è previsto. Disponibile solo nella versione
 installata (non nella portable). Vero HID a livello hardware (driver kernel) non è incluso.
 
-### Microfono di chi si collega (parlare nelle app del PC remoto)
+### Audio e microfono (come Desktop remoto di Windows)
 
-Puoi usare il microfono del **tuo** PC nelle app del **PC remoto** (es. una call Teams sul PC
-remoto con le cuffie collegate al tuo portatile). Scegli il microfono dalla barra audio della
-sessione. Perché Teams & co. sul PC remoto lo vedano come un microfono serve, **una volta**, un
-cavo audio virtuale sul PC remoto (per esempio [VB-CABLE](https://vb-audio.com/Cable/), gratuito):
-Remoto riproduce la tua voce su "CABLE Input" e in Teams scegli "CABLE Output" come microfono.
-Senza cavo la tua voce arriva comunque, ma solo agli altoparlanti del PC remoto. Si configura in
-*Impostazioni › Audio*.
+Durante la sessione le **casse del PC remoto tacciono** e l'audio esce solo dal PC di chi controlla.
+Puoi anche usare il microfono del **tuo** PC nelle app del **PC remoto** (es. una call Teams sul PC
+remoto con le cuffie collegate al tuo portatile): scegli il microfono dalla barra audio della
+sessione. Sul PC remoto la tua voce diventa il **microfono predefinito** e i suoi microfoni vengono
+silenziati; a fine sessione tutto torna com'era (anche se Remoto si chiude di colpo: al riavvio
+ripristina casse e microfoni).
+
+Per la parte del microfono serve, **una volta**, un cavo audio virtuale sul PC remoto: Windows non
+permette a un programma di creare un microfono senza un driver, e un driver non può stare in un'app
+portable. Remoto lo installa con un clic, anche dalla versione portable: *Impostazioni › Audio ›
+Installa VB-CABLE* oppure il pulsante **Installa** nel pannello della sessione sul PC remoto. Scarica
+il pacchetto ufficiale di [VB-CABLE](https://vb-audio.com/Cable/) (gratuito) dal sito del produttore,
+ne verifica la firma digitale e chiede la conferma di amministratore a chi è davanti al PC. Remoto
+riconosce anche cavi già presenti (Voicemeeter, "Steam Streaming Microphone" installato da Steam).
+Nelle app (Teams…) lascia il microfono "Predefinito". Tutto si disattiva in *Impostazioni › Audio ›
+Casse e microfono di chi si collega*.
 
 ### Durante la sessione
 
@@ -227,8 +242,9 @@ visibili su `http://server:47800/` e `/health`.
 | Le postazioni in LAN non si vedono | consenti Remoto nel Windows Firewall (reti private) o collegati per IP |
 | Non riesco a cliccare in alcune finestre del PC remoto | sono elevate (UAC/amministratore): installa il *Controllo completo* (Impostazioni › Sicurezza) sul PC remoto |
 | La richiesta di connessione non compare o la connessione cade subito dopo | un antivirus, un firewall o la VPN su uno dei due PC sta bloccando Remoto: aggiungi un'eccezione. Il dettaglio è nel registro e nella finestra di sessione |
-| Il microfono arriva ma Teams non lo vede | installa un cavo audio virtuale sul PC remoto (VB-CABLE) e scegli "CABLE Output" come microfono in Teams |
-| Immagine scattosa | qualità *Velocità*, oppure prova un altro codec (Impostazioni › Visualizzazione) |
+| Il microfono arriva ma Teams non lo vede | sul PC remoto: *Installa* nel pannello di Remoto (o *Impostazioni › Audio › Installa VB-CABLE*); in Teams lascia il microfono "Predefinito" |
+| Immagine scattosa o "lagga" | apri le statistiche della sessione: *Limitato da: CPU del PC remoto* → qualità *Velocità*; *banda* → rete lenta o Wi-Fi disturbato |
+| Copiati dei file ma non si incollano sull'altro PC | servono i permessi *Appunti* e *File*; i file viaggiano col trasferimento file (avanzamento nel pannello File) e oltre 1 GB non partono da soli: usa il pannello File |
 | Serve diagnosticare | *Impostazioni › Informazioni › Cartella dei log* (`%APPDATA%\Remoto\logs`; servizio: `%ProgramData%\Remoto\logs`) |
 
 ## Sviluppo
@@ -254,8 +270,10 @@ npm run start:b
 
 | Comando | Cosa fa |
 |---|---|
-| `npm test` | 85 test unitari (ID, geometria, servizio, server, trasporti TCP/UDP con firewall simulato, sessioni, file, config…) |
-| `npm run test:e2e` | 17 test end-to-end con due istanze reali e un server (sposta per un istante il mouse e lo rimette a posto) |
+| `npm test` | 96 test unitari (ID, geometria, servizio, server, trasporti TCP/UDP con firewall simulato, sessioni, appunti, audio, file, config…) |
+| `npm run test:e2e` | 18 test end-to-end con due istanze reali e un server (sposta per un istante il mouse e lo rimette a posto; casse, microfoni e appunti del PC non vengono toccati) |
+| `node test/e2e/dev/clipboard-files-check.mjs` | collaudo degli appunti veri di Windows: file (come Esplora risorse) e testo; il contenuto precedente viene ripristinato |
+| `node test/e2e/dev/audio-mute-check.mjs` | collaudo: con le casse silenziate l'audio di sistema arriva ancora a chi controlla (silenzia per qualche secondo le casse predefinite) |
 | `REMOTO_E2E_VISUAL=1 npm run test:e2e` | include la modalità privacy (oscura i monitor per circa un secondo) |
 | `node test/e2e/dev/service-helper.mjs` | collaudo dell'helper del servizio in "modalità di prova" (richiede `npm run build:service`) |
 | `node test/e2e/dev/qa-shots.mjs <cartella> [light\|dark]` | screenshot di tutte le schermate per il controllo visivo (video sfocato) |

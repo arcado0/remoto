@@ -77,9 +77,14 @@ try {
   const hostId = await host.app.evaluate(() => globalThis.__remoto.identity().id);
 
   // ---------- avvio della sessione ----------
+  // PROBE_DIRECT=1: connessione diretta per indirizzo (come in LAN, senza server); PROBE_NOLAN=1: senza le
+  // indicazioni di banda per la LAN (per confronto)
+  const direct = process.env.PROBE_DIRECT === '1';
+  if (process.env.PROBE_NOLAN === '1') await (await windowWith(host.app, 'engine/engine.html')).evaluate(() => (window.__lanBitrates = false));
+  const target = direct ? `127.0.0.1:${await host.app.evaluate(() => globalThis.__remoto.direct.port)}` : hostId;
   const before = new Set(viewer.app.windows());
   const home = await windowWith(viewer.app, 'home/index.html');
-  await home.fill('.connect-input input', hostId);
+  await home.fill('.connect-input input', target);
   const t0 = Date.now();
   await home.click('button:has-text("Connetti")');
   const sess = await until(() => viewer.app.windows().find((w) => !before.has(w) && w.url().includes('session/session.html')), 15_000, 'finestra di sessione');
@@ -127,6 +132,11 @@ try {
     return { cx: phys.x - dp.x, cy: phys.y - dp.y, w: dp.width, h: dp.height, ax: phys.x, ay: phys.y };
   }, LOAD);
   console.log(`riquadro al pixel fisico ${patch.ax},${patch.ay}`);
+  // PROBE_QUALITY=quality|balanced|speed: preset scelto dal viewer
+  if (process.env.PROBE_QUALITY) {
+    await sess.evaluate((preset) => window.__remotoSession.state.peer.sendCtrl({ t: 'quality', preset }), process.env.PROBE_QUALITY);
+    await sleep(500);
+  }
   // esperimenti sull'host: tipo di contenuto (PROBE_HINT) e fotogrammi al secondo (PROBE_FPS)
   const hint = process.env.PROBE_HINT || '';
   const fps = Number(process.env.PROBE_FPS) || 0;

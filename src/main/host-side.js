@@ -1,14 +1,19 @@
 // Lato "postazione controllata": collega HostManager all'engine nascosto (WebRTC e cattura),
 // alla finestra di accettazione, al pannello di sessione e alle funzioni di sistema.
 // Ogni richiesta arrivata dal viewer viene autorizzata qui, sui permessi della sessione.
-import { screen, desktopCapturer, nativeImage } from 'electron';
+import { app, screen, desktopCapturer, nativeImage } from 'electron';
+import path from 'node:path';
 import { HostManager } from './sessions/host-manager.js';
 import { InputInjector } from './native/input.js';
 import { ServiceClient } from './native/service-client.js';
 import { win32 } from './native/win32.js';
 import { PrivacyOverlay, WhiteboardOverlay } from './features/overlays.js';
 import { InputBlocker, isAdmin, lockWorkstation, restartComputer } from './features/system.js';
+import { AudioRedirect } from './features/audio-redirect.js';
+import * as audioDevices from './native/audio-devices.js';
 import { formatId } from '../shared/ids.js';
+import { sharesSubnet } from '../shared/netinfo.js';
+import os from 'node:os';
 import { TIMEOUTS, LIMITS } from '../shared/protocol.js';
 
 // Fotogrammi del desktop protetto (UAC/blocco) inviati dal servizio: quante volte al secondo e larghezza massima.
@@ -34,6 +39,14 @@ export class HostSide {
     this.service = this.#createService();
     if (this.service) this.input.setSink(this.service);
     this.secureTimer = null;
+    // casse e microfono di questo PC disattivati durante le sessioni (audio solo da chi controlla)
+    this.audio = new AudioRedirect({
+      devices: audioDevices,
+      file: path.join(app.getPath('userData'), 'audio-ripristino.json'),
+      enabled: () => ctl.config.get().audio?.exclusive !== false,
+      logger: { info: (m) => ctl.log.info(m), warn: (m) => ctl.log.warn(m) },
+    });
+    this.audio.recover();
 
     this.manager = new HostManager({
       getSettings: () => this.#settings(),
@@ -183,7 +196,10 @@ export class HostSide {
     this.#ensureService();
     const extra = Array.isArray(c.network.iceServers) ? c.network.iceServers : [];
     const ice = s?.kind === 'relay' ? [...(this.ctl.link.iceServers || []), ...extra] : extra;
-    this.#toEngine('engine:start', { ...info, iceServers: ice, hostName: this.ctl.identity().name, admin: isAdmin(), caps: this.caps(), platform: process.platform });
+    const exclusiveAudio = c.audio?.exclusive !== false && this.audio.available;
+    // stessa rete locale (connessione diretta, o via server ma nella stessa sottorete): banda da LAN da subito
+    const lan = info.kind === 'direct' || sharesSubnet(info.viewerAddrs, os.networkInterfaces());
+    this.#toEngine('engine:start', { ...info, iceServers: ice, hostName: this.ctl.identity().name, admin: isAdmin(), caps: this.caps(), platform: process.platform, exclusiveAudio, lan });
   }
 
   async displays() {
@@ -278,6 +294,17 @@ export class HostSide {
     if (this.#session(id, 'clipboard')) this.ctl.clipboard.apply(payload);
   }
 
+  /** File dagli appunti di chi controlla: solo con i permessi "Appunti" e "File", in una cartella scelta qui. */
+  async clipFilesPrepare(id) {
+    if (!this.#session(id, 'clipboard') || !this.#session(id, 'files')) throw new Error('Copia di file tramite appunti non consentita');
+    return this.ctl.clipTemp.prepare();
+  }
+
+  async clipFilesApply(id, dir) {
+    if (!this.#session(id, 'clipboard') || !this.#session(id, 'files')) throw new Error('Copia di file tramite appunti non consentita');
+    return this.ctl.applyClipboardFiles(dir);
+  }
+
   #onLocalClipboard(payload) {
     const ids = this.manager.list().filter((s) => s.state === 'active' && s.perms?.clipboard).map((s) => s.id);
     if (ids.length) this.#toEngine('engine:host-clipboard', ids, payload);
@@ -310,15 +337,26 @@ export class HostSide {
     const e = this.extras.get(id);
     if (!e || !info || typeof info !== 'object') return;
     e.mic = { active: Boolean(info.active), routed: Boolean(info.routed), device: String(info.device || '').slice(0, 120), reason: String(info.reason || '') };
+    // la voce di chi controlla suona su un cavo virtuale: il suo lato "microfono" diventa quello di questo PC
+    this.audio.setMic(id, e.mic.routed && this.#session(id, 'microphone') ? e.mic.device : null);
+    this.#pushPanel();
+  }
+
+  /** L'engine invia (o smette di inviare) l'audio di sistema a questa sessione: le casse locali tacciono. */
+  onAudioOut(id, on) {
+    this.audio.setSpeakers(id, Boolean(on) && Boolean(this.#session(id, 'audio')));
     this.#pushPanel();
   }
 
   audioPrefsChanged() {
     this.#toEngine('engine:audio-prefs-changed');
+    this.audio.refresh();
+    this.#pushPanel();
   }
 
   #withMic(list) {
-    return list.map((s) => ({ ...s, mic: this.extras.get(s.id)?.mic || null }));
+    const audio = this.audio.state();
+    return list.map((s) => ({ ...s, mic: this.extras.get(s.id)?.mic || null, audio }));
   }
 
   #pushPanel() {
@@ -428,6 +466,9 @@ export class HostSide {
     if (!perms.blockInput) this.blocker.set(id, false);
     if (!perms.whiteboard) this.whiteboard.release(id);
     if (!perms.control) this.input.releaseAll(id);
+    // permessi revocati: casse e microfono di questo PC tornano subito come prima
+    if (!perms.audio) this.audio.setSpeakers(id, false);
+    if (!perms.microphone) this.audio.setMic(id, null);
     this.ctl.updateClipboardUsage();
   }
 
@@ -438,6 +479,7 @@ export class HostSide {
 
   #onEnded(s, reason) {
     const e = this.extras.get(s.id);
+    this.audio.release(s.id);
     this.input.forget(s.id);
     this.privacy.set(s.id, false);
     this.blocker.set(s.id, false);
@@ -609,6 +651,7 @@ export class HostSide {
   }
 
   shutdown() {
+    this.audio.restoreAll();
     this.#stopSecure();
     this.service?.stop();
     this.privacy.releaseAll();

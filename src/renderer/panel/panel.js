@@ -1,6 +1,7 @@
 // Pannello sempre in primo piano sul PC controllato: chi è collegato, permessi modificabili
 // al volo, chat e disconnessione (come la finestrella di sessione di AnyDesk).
 import { h, icon, $, replace } from '../lib/dom.js';
+import { installCable } from '../lib/cable.js';
 import { bootPage, avatar, playSound, openMenu } from '../lib/ui.js';
 import { PERMISSIONS } from '../../shared/permissions.js';
 import { formatId } from '../../shared/ids.js';
@@ -51,6 +52,15 @@ function sessionBlock(s) {
           { class: `mic-line ${s.mic.routed ? 'ok' : 'warn'}` },
           icon('mic', 'sm'),
           s.mic.routed ? `Parla nelle app di questo PC tramite ${s.mic.device}` : s.mic.reason === 'no-virtual-device' ? 'Microfono ricevuto, ma manca un cavo audio virtuale' : 'Microfono ricevuto, non usato',
+          !s.mic.routed && s.mic.reason === 'no-virtual-device' ? h('button', { class: 'btn sm', style: { marginLeft: 'auto' }, onClick: (e) => installCable(e.currentTarget) }, 'Installa') : null,
+        )
+      : null,
+    s.audio?.speakersMuted || s.audio?.micRedirected
+      ? h(
+          'div',
+          { class: 'mic-line ok' },
+          icon('headphones', 'sm'),
+          `${[s.audio.speakersMuted ? 'Casse silenziate' : '', s.audio.micRedirected ? `microfono: ${s.audio.micDevice}` : ''].filter(Boolean).join(' · ')} fino a fine sessione`,
         )
       : null,
     h(

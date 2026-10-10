@@ -197,3 +197,16 @@ test('indirizzi della postazione: prima la rete principale, in fondo le schede v
   const p = await primaryAddress({ timeoutMs: 500 });
   assert.ok(p === null || /^\d+\.\d+\.\d+\.\d+$/.test(p));
 });
+
+test('sharesSubnet: stessa rete locale anche quando la richiesta passa dal server', async () => {
+  const { sharesSubnet } = await import('../../src/shared/netinfo.js');
+  const ifs = {
+    'Wi-Fi': [{ family: 'IPv4', address: '192.168.1.14', netmask: '255.255.255.0', internal: false }],
+    lo: [{ family: 'IPv4', address: '127.0.0.1', netmask: '255.0.0.0', internal: true }],
+  };
+  assert.equal(sharesSubnet(['192.168.1.119'], ifs), true);
+  assert.equal(sharesSubnet(['192.168.2.5'], ifs), false);
+  assert.equal(sharesSubnet(['8.8.8.8'], ifs), false, 'indirizzi pubblici mai');
+  assert.equal(sharesSubnet(['127.0.0.5'], ifs), false, 'loopback non è la LAN');
+  assert.equal(sharesSubnet(['nonsenso', null], ifs), false);
+});
